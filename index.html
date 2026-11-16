@@ -53,20 +53,23 @@ function render(done) {
       : '<label class="item"><input type="checkbox" name="act" value="' + esc(x[0]) + '" data-t="' + esc(x[1]) + '"> <span><b>' + esc(x[0]) + '.</b> ' + esc(x[1]) + '</span></label>';
   }).join("") + (open ? '<div class="who">Who is updating? <label><input type="radio" name="who" value="jin" required> Jin</label><label><input type="radio" name="who" value="mh"> M</label></div><button id="b" type="submit">Save status</button>' : "");
 }
-function readWithRetry() {
-  // Google's first answer sometimes stalls; fire extra attempts at 6 s and 14 s and use whichever answers first.
+function withRetry(params, label) {
+  // Requests to Google sometimes stall in some browsers; fire extra attempts at 6 s and 14 s
+  // (saves are safe to repeat: the server ignores actions already marked done) and use the first answer.
   return new Promise(function (resolve, reject) {
     var finished = false, fails = 0, tries = 0;
     function attempt() {
       if (finished) return; tries++;
-      if (tries > 1) sub.textContent = "Loading… (try " + tries + ")";
-      api({mode: "json", e: P.e, k: P.k, n: Date.now() + "" + tries}).then(function (r) {
+      if (tries > 1 && label) label(tries);
+      var q = {}; for (var k in params) q[k] = params[k]; q.n = Date.now() + "" + tries;
+      api(q).then(function (r) {
         if (!finished) { finished = true; resolve(r); }
       }, function (er) { fails++; if (!finished && fails >= 3) { finished = true; reject(er); } });
     }
     attempt(); setTimeout(attempt, 6000); setTimeout(attempt, 14000);
   });
 }
+function readWithRetry() { return withRetry({mode: "json", e: P.e, k: P.k}, function (n) { sub.textContent = "Loading… (try " + n + ")"; }); }
 function load() {
   if (!P.e || !P.k || !acts.length) { sub.textContent = "This link is not valid."; return; }
   readWithRetry().then(function (r) {
@@ -81,7 +84,7 @@ f.addEventListener("submit", function (ev) {
   if (!c.length) { m.textContent = "Tick at least one item first."; return; }
   if (!w) { m.textContent = "Choose who is updating."; return; }
   var b = document.getElementById("b"); b.disabled = true; b.textContent = "Saving…"; m.textContent = "";
-  api({mode: "save", e: P.e, k: P.k, who: w.value, d: b64e(JSON.stringify(c))}).then(function (r) {
+  withRetry({mode: "save", e: P.e, k: P.k, who: w.value, d: b64e(JSON.stringify(c))}, function (n) { b.textContent = "Saving… (try " + n + ")"; }).then(function (r) {
     if (!r.ok) throw new Error(r.error || "Save failed");
     m.textContent = "✅ Saved."; render(r.done);
   }).catch(function (er) { b.disabled = false; b.textContent = "Save status"; m.textContent = "Could not save: " + er.message; });
