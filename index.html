@@ -35,8 +35,10 @@ function b64e(str) { var u = new TextEncoder().encode(str), b = ""; for (var i =
 function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
 function api(params) {
   var q = Object.keys(params).map(function (k) { return k + "=" + encodeURIComponent(params[k]); }).join("&");
-  return fetch(API + "?" + q, {credentials: "omit", redirect: "follow", cache: "no-store", referrerPolicy: "no-referrer"})
-    .then(function (r) { return r.text(); })
+  var ctl = window.AbortController ? new AbortController() : null;
+  var t = setTimeout(function () { if (ctl) ctl.abort(); }, 30000);
+  return fetch(API + "?" + q, {credentials: "omit", redirect: "follow", cache: "no-store", referrerPolicy: "no-referrer", signal: ctl ? ctl.signal : undefined})
+    .then(function (r) { clearTimeout(t); return r.text(); }, function (e) { clearTimeout(t); throw new Error(e && e.name === "AbortError" ? "Google took too long to answer (30 s)" : "Your browser blocked the request to Google (" + (e && e.message) + ")"); })
     .then(function (t) { try { return JSON.parse(t); } catch (e) { return {ok: false, error: "This link is not valid."}; } });
 }
 var acts = [];
@@ -56,7 +58,7 @@ function load() {
   api({mode: "json", e: P.e, k: P.k}).then(function (r) {
     if (!r.done) { sub.textContent = r.error || "This link is not valid."; return; }
     render(r.done);
-  }).catch(function () { sub.textContent = "Could not load this checklist. The link may be invalid, or check your connection and reload."; });
+  }).catch(function (er) { sub.textContent = "Could not load this checklist: " + er.message + ". Please reload, or open the link in another browser."; });
 }
 f.addEventListener("submit", function (ev) {
   ev.preventDefault();
@@ -71,6 +73,8 @@ f.addEventListener("submit", function (ev) {
   }).catch(function (er) { b.disabled = false; b.textContent = "Save status"; m.textContent = "Could not save: " + er.message; });
 });
 window.addEventListener("hashchange", function () { location.reload(); });
+window.onerror = function (msg) { sub.textContent = "Page error: " + msg; };
+sub.textContent = "Loading… (contacting Google)";
 load();
 </script>
 </body></html>
