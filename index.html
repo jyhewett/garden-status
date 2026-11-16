@@ -53,9 +53,23 @@ function render(done) {
       : '<label class="item"><input type="checkbox" name="act" value="' + esc(x[0]) + '" data-t="' + esc(x[1]) + '"> <span><b>' + esc(x[0]) + '.</b> ' + esc(x[1]) + '</span></label>';
   }).join("") + (open ? '<div class="who">Who is updating? <label><input type="radio" name="who" value="jin" required> Jin</label><label><input type="radio" name="who" value="mh"> M</label></div><button id="b" type="submit">Save status</button>' : "");
 }
+function readWithRetry() {
+  // Google's first answer sometimes stalls; fire extra attempts at 6 s and 14 s and use whichever answers first.
+  return new Promise(function (resolve, reject) {
+    var finished = false, fails = 0, tries = 0;
+    function attempt() {
+      if (finished) return; tries++;
+      if (tries > 1) sub.textContent = "Loading… (try " + tries + ")";
+      api({mode: "json", e: P.e, k: P.k, n: Date.now() + "" + tries}).then(function (r) {
+        if (!finished) { finished = true; resolve(r); }
+      }, function (er) { fails++; if (!finished && fails >= 3) { finished = true; reject(er); } });
+    }
+    attempt(); setTimeout(attempt, 6000); setTimeout(attempt, 14000);
+  });
+}
 function load() {
   if (!P.e || !P.k || !acts.length) { sub.textContent = "This link is not valid."; return; }
-  api({mode: "json", e: P.e, k: P.k}).then(function (r) {
+  readWithRetry().then(function (r) {
     if (!r.done) { sub.textContent = r.error || "This link is not valid."; return; }
     render(r.done);
   }).catch(function (er) { sub.textContent = "Could not load this checklist: " + er.message + ". Please reload, or open the link in another browser."; });
